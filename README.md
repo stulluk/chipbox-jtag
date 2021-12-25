@@ -160,3 +160,17 @@ devpts /dev/pts devpts rw 0 0
 tmpfs /tmp tmpfs rw 0 0
 #
 ```
+
+
+## Some more findings before sleep
+
+```
+JFlash -openprj"jflash-chipbox-project.21.12.2021.jflash" -readrange"0x38000000","0x380a0000" -saveas"uboot-0.bin" -readrange"0x38800000","0x38860000" -saveas"uboot-1.bin" -readrange"0x39000000","0x39060000" -saveas"uboot-2.bin" -readrange"0x39800000","0x39860000" -saveas"uboot-3.bin" -save -exit
+```
+
+This allows me to download 4 ( four - yes, I remember back then 10 years ago, while I was talking with KB, he also didn't knew why we needed 4x u-boot partitions in the NOr Flash... Blame long-dead CelestialSemi) u-boot partitions from the NOR Flash.
+
+final interesting status:
+
+The size of u-boot0 partition is different than other three. When I used above one-liner to dump other u-boot partitions, basically I found them to be empty. Then I wonder, if I could use those space ???
+
