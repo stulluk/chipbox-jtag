@@ -1,0 +1,51 @@
+/*********************************************************************
+* Chipbox / Orion CSM1200 — cold JTAG DDR init for J-Flash RAMCode
+* Ported from board/orion/lowlevel_init.S (CONFIG_ARCH_CSM1200, 256M DDR)
+*********************************************************************/
+void InitTarget(void) {
+  U32 misc;
+  U16 rst;
+
+  Report("Chipbox Orion DDR InitTarget()");
+
+  JTAG_IRLen         = 4;
+  JTAG_AllowTAPReset = 1;
+
+  misc = MEM_ReadU32(0x10110010);
+  if (misc & 0x10000000) {
+    Report("DRAM already marked initialized — skip PLL/DRAM poke");
+    return;
+  }
+
+  /* SW reset: clear bit 1 @ 0x10171200 */
+  rst = MEM_ReadU16(0x10171200);
+  rst &= ~0x2;
+  MEM_WriteU16(0x10171200, rst);
+
+  /* DDR PLL 533 MHz (CSM1200) */
+  MEM_WriteU16(0x10171100, 0x084F);
+
+  SYS_Sleep(100);
+
+  /* Release SW reset */
+  rst = MEM_ReadU16(0x10171200);
+  rst |= 0x2;
+  MEM_WriteU16(0x10171200, rst);
+
+  /* DRAM controller timing block */
+  MEM_WriteU32(0x10110000, 0x8EEDAEA3);
+  MEM_WriteU32(0x10110004, 0x43412293);
+  MEM_WriteU32(0x10110008, 0x06060606);
+  MEM_WriteU32(0x1011000C, 0x06060606);
+
+  Report("Chipbox Orion DDR init writes done");
+}
+
+void ResetTarget(void) {
+  Report("Chipbox Orion ResetTarget()");
+  JTAG_ResetPin = 0;
+  SYS_Sleep(50);
+  JTAG_ResetPin = 1;
+  SYS_Sleep(200);
+  InitTarget();
+}

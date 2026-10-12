@@ -1,0 +1,144 @@
+/*********************************************************************
+* Chipbox / Orion CSM1200 — cold JTAG init for J-Flash
+*   DDR:  board/orion/lowlevel_init.S (partial)
+*   SMC:  board/orion/orion.c flash__init() (CSM1200, 32M NOR)
+*********************************************************************/
+
+void RunV39LowlevelInit(void) {
+  int r;
+
+  Report("ITCM + v39 lowlevel_init via J-Link commands");
+
+  r = JLINK_ExecCommand("wcp15ex 0, 9, 1, 1, 0x20000019");
+  if (r < 0) { Report("ITCM enable failed"); return; }
+  r = JLINK_ExecCommand("wcp15ex 0, 9, 1, 0, 0x20008019");
+  if (r < 0) { Report("DTCM enable failed"); return; }
+
+  r = JLINK_ExecCommand("loadbin /media/WORK/CHIPBOX-REBORN/reference/chipbox_lowlevel_init_v39.bin, 0x20000000");
+  if (r < 0) { Report("loadbin lowlevel_init failed"); return; }
+
+  JLINK_ExecCommand("w4 0x20001000, 0xEAFFFFFE");
+  JLINK_ExecCommand("SetReg LR, 0x20001000");
+  JLINK_ExecCommand("SetPC 0x20000000");
+  JLINK_ExecCommand("Go");
+  SYS_Sleep(250);
+  JLINK_ExecCommand("h");
+}
+
+void OrionDdrInit(void) {
+  U16 rst;
+
+  Report("Orion DDR init (CSM1201 values from v39 uboot0)");
+
+  rst = MEM_ReadU16(0x10171200);
+  rst &= ~0x2;
+  MEM_WriteU16(0x10171200, rst);
+
+  MEM_WriteU16(0x10171100, 0x084F);
+  SYS_Sleep(200);
+
+  rst = MEM_ReadU16(0x10171200);
+  rst |= 0x2;
+  MEM_WriteU16(0x10171200, rst);
+
+  MEM_WriteU32(0x10110000, 0x97671892);
+  MEM_WriteU32(0x10110004, 0x937D0225);
+  MEM_WriteU32(0x10110008, 0x08080808);
+  MEM_WriteU32(0x1011000C, 0x08080808);
+  MEM_WriteU32(0x10110010, 0x30000465);
+  Report("Orion DDR init writes done");
+}
+
+void FlashInit(void) {
+  U32 rd;
+  U32 iobits;
+  U32 val;
+  U32 ce1;
+  U32 ce2;
+
+  Report("Chipbox flash__init() port (32M NOR)");
+
+  ce1 = 0x0B010B01;
+  ce2 = 0x0B010A02;
+
+  rd = MEM_ReadU32(0x10100000);
+  iobits = (rd >> 24) & 0x1;
+  MEM_WriteU32(0x10100000, (rd & ~0xFF) | 0x0C);
+  MEM_WriteU32(0x10100004, ce1);
+  MEM_WriteU32(0x10100008, ce2);
+
+  rd = MEM_ReadU32(0x1010000C);
+  MEM_WriteU32(0x1010000C, (rd & ~0xFF) | 0x0C);
+  MEM_WriteU32(0x10100010, ce1);
+  MEM_WriteU32(0x10100014, ce2);
+  rd = MEM_ReadU32(0x1010000C);
+  MEM_WriteU32(0x1010000C, (rd & ~0x01000000) | (iobits << 24));
+
+  rd = MEM_ReadU32(0x10100018);
+  MEM_WriteU32(0x10100018, (rd & ~0xFF) | 0x0C);
+  MEM_WriteU32(0x1010001C, ce1);
+  MEM_WriteU32(0x10100020, ce2);
+  rd = MEM_ReadU32(0x10100018);
+  MEM_WriteU32(0x10100018, (rd & ~0x01000000) | (iobits << 24));
+
+  rd = MEM_ReadU32(0x10100024);
+  MEM_WriteU32(0x10100024, (rd & ~0xFF) | 0x0C);
+  MEM_WriteU32(0x10100028, ce1);
+  MEM_WriteU32(0x1010002C, ce2);
+  rd = MEM_ReadU32(0x10100024);
+  MEM_WriteU32(0x10100024, (rd & ~0x01000000) | (iobits << 24));
+
+  MEM_WriteU32(0x10100038, 1);
+
+  val = MEM_ReadU32(0x10100000);
+  MEM_WriteU32(0x1010000C, val);
+  MEM_WriteU32(0x10100018, val);
+  MEM_WriteU32(0x10100024, val);
+
+  val = MEM_ReadU32(0x10100004);
+  MEM_WriteU32(0x10100010, val);
+  MEM_WriteU32(0x1010001C, val);
+  MEM_WriteU32(0x10100028, val);
+
+  val = MEM_ReadU32(0x10100008);
+  MEM_WriteU32(0x10100014, val);
+  MEM_WriteU32(0x10100020, val);
+  MEM_WriteU32(0x1010002C, val);
+
+  Report("flash__init done");
+}
+
+void TestSdram(void) {
+  U32 v;
+  MEM_WriteU32(0x05000000, 0xA5A5A5A5);
+  v = MEM_ReadU32(0x05000000);
+  Report("SDRAM probe @0x05000000");
+  if (v == 0xA5A5A5A5) {
+    Report("SDRAM OK @0x05000000");
+  } else {
+    Report("SDRAM FAIL @0x05000000");
+  }
+}
+
+void InitTarget(void) {
+  Report("Chipbox Orion full InitTarget()");
+
+  JTAG_IRLen         = 4;
+  JTAG_AllowTAPReset = 1;
+
+  /* Always run full cold init — misc bits are stale after partial flash / warm reset. */
+  Report("Cold path — full OrionDdrInit + FlashInit");
+  OrionDdrInit();
+  TestSdram();
+  FlashInit();
+  TestSdram();
+}
+
+void ResetTarget(void) {
+  Report("Chipbox Orion full ResetTarget()");
+  JTAG_ResetPin = 0;
+  SYS_Sleep(50);
+  JTAG_ResetPin = 1;
+  SYS_Sleep(200);
+  InitTarget();
+}
